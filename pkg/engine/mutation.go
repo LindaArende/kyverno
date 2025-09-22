@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -28,7 +29,7 @@ func (e *engine) mutate(
 	policyContext.JSONContext().Checkpoint()
 	defer policyContext.JSONContext().Restore()
 
-	for _, rule := range autogen.ComputeRules(policy, "") {
+	for _, rule := range autogen.Default.ComputeRules(policy, "") {
 		startTime := time.Now()
 		logger := internal.LoggerWithRule(logger, rule)
 		handlerFactory := func() (handlers.Handler, error) {
@@ -36,9 +37,12 @@ func (e *engine) mutate(
 				return nil, nil
 			}
 			if !policyContext.AdmissionOperation() && rule.HasMutateExisting() {
-				return mutation.NewMutateExistingHandler(e.client)
+				if e.client == nil {
+					return nil, fmt.Errorf("Handler factory requires a client but a nil client was passed, likely due to a bug or unsupported operation.")
+				}
+				return mutation.NewMutateExistingHandler(e.client, e.isCluster)
 			}
-			return mutation.NewMutateResourceHandler()
+			return mutation.NewMutateResourceHandler(e.client, e.isCluster)
 		}
 		resource, ruleResp := e.invokeRuleHandler(
 			ctx,

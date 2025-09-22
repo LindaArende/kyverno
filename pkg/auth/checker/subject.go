@@ -2,11 +2,14 @@ package checker
 
 import (
 	"context"
+	"errors"
 
 	authorizationv1 "k8s.io/api/authorization/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	authorizationv1client "k8s.io/client-go/kubernetes/typed/authorization/v1"
 )
+
+var ErrNoServiceAccount = errors.New("no service account provided")
 
 type subject struct {
 	client authorizationv1client.SubjectAccessReviewInterface
@@ -14,7 +17,11 @@ type subject struct {
 	groups []string
 }
 
-func (c subject) Check(ctx context.Context, group, version, resource, subresource, namespace, verb string) (*AuthResult, error) {
+func (c subject) Check(ctx context.Context, group, version, resource, subresource, namespace, name, verb string) (*AuthResult, error) {
+	if c.user == "" {
+		return nil, ErrNoServiceAccount
+	}
+
 	review := &authorizationv1.SubjectAccessReview{
 		Spec: authorizationv1.SubjectAccessReviewSpec{
 			ResourceAttributes: &authorizationv1.ResourceAttributes{
@@ -24,6 +31,7 @@ func (c subject) Check(ctx context.Context, group, version, resource, subresourc
 				Subresource: subresource,
 				Namespace:   namespace,
 				Verb:        verb,
+				Name:        name,
 			},
 			User:   c.user,
 			Groups: c.groups,

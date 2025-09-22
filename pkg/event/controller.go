@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/kyverno/kyverno/pkg/client/clientset/versioned/scheme"
 	"github.com/kyverno/kyverno/pkg/metrics"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/metric"
 	corev1 "k8s.io/api/core/v1"
 	eventsv1 "k8s.io/api/events/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -31,6 +31,12 @@ const (
 	workQueueRetryLimit = 3
 )
 
+var (
+	invalidChars           = regexp.MustCompile(`[^a-z0-9\.\-]`)
+	startsWithAlphaNumeric = regexp.MustCompile(`^[a-z0-9]`)
+	endsWithAlphaNumeric   = regexp.MustCompile(`[a-z0-9]$`)
+)
+
 // Interface to generate event
 type Interface interface {
 	Add(infoList ...Info)
@@ -38,37 +44,33 @@ type Interface interface {
 
 // controller generate events
 type controller struct {
-	logger               logr.Logger
-	eventsClient         v1.EventsV1Interface
-	omitEvents           sets.Set[string]
-	queue                workqueue.RateLimitingInterface
-	clock                clock.Clock
-	hostname             string
-	droppedEventsCounter metric.Int64Counter
-	maxQueuedEvents      int
+	logger          logr.Logger
+	eventsClient    v1.EventsV1Interface
+	omitEvents      sets.Set[string]
+	queue           workqueue.TypedRateLimitingInterface[any]
+	clock           clock.Clock
+	hostname        string
+	metrics         metrics.EventMetrics
+	maxQueuedEvents int
 }
 
 // NewEventGenerator to generate a new event controller
 func NewEventGenerator(eventsClient v1.EventsV1Interface, logger logr.Logger, maxQueuedEvents int, omitEvents ...string) *controller {
 	clock := clock.RealClock{}
 	hostname, _ := os.Hostname()
-	meter := otel.GetMeterProvider().Meter(metrics.MeterName)
-	droppedEventsCounter, err := meter.Int64Counter(
-		"kyverno_events_dropped",
-		metric.WithDescription("can be used to track the number of events dropped by the event generator"),
-	)
-	if err != nil {
-		logger.Error(err, "failed to register metric kyverno_events_dropped")
-	}
+
 	return &controller{
-		logger:               logger,
-		eventsClient:         eventsClient,
-		omitEvents:           sets.New(omitEvents...),
-		queue:                workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), ControllerName),
-		clock:                clock,
-		hostname:             hostname,
-		droppedEventsCounter: droppedEventsCounter,
-		maxQueuedEvents:      maxQueuedEvents,
+		logger:       logger,
+		eventsClient: eventsClient,
+		omitEvents:   sets.New(omitEvents...),
+		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
+			workqueue.DefaultTypedControllerRateLimiter[any](),
+			workqueue.TypedRateLimitingQueueConfig[any]{Name: ControllerName},
+		),
+		clock:           clock,
+		hostname:        hostname,
+		metrics:         metrics.GetEventMetrics(),
+		maxQueuedEvents: maxQueuedEvents,
 	}
 }
 
@@ -77,7 +79,7 @@ func (gen *controller) Add(infos ...Info) {
 	logger := gen.logger
 	logger.V(3).Info("generating events", "count", len(infos))
 	if gen.maxQueuedEvents == 0 || gen.queue.Len() > gen.maxQueuedEvents {
-		logger.V(2).Info("exceeds the event queue limit, dropping the event", "maxQueuedEvents", gen.maxQueuedEvents, "current size", gen.queue.Len())
+		logger.V(3).Info("exceeds the event queue limit, dropping the event", "maxQueuedEvents", gen.maxQueuedEvents, "current size", gen.queue.Len())
 		return
 	}
 	for _, info := range infos {
@@ -87,19 +89,19 @@ func (gen *controller) Add(infos ...Info) {
 			continue
 		}
 		if gen.omitEvents.Has(string(info.Reason)) {
-			logger.V(6).Info("omitting event", "kind", info.Regarding.Kind, "name", info.Regarding.Name, "namespace", info.Regarding.Namespace, "reason", info.Reason)
+			logger.V(6).Info("omitting event", "kind", info.Regarding.Kind, "name", info.Regarding.Name, "namespace", info.Regarding.Namespace, "reason", info.Reason, "action", info.Action, "note", info.Message)
 			continue
 		}
 		gen.emitEvent(info)
-		logger.V(6).Info("creating event", "kind", info.Regarding.Kind, "name", info.Regarding.Name, "namespace", info.Regarding.Namespace, "reason", info.Reason)
+		logger.V(6).Info("creating event", "kind", info.Regarding.Kind, "name", info.Regarding.Name, "namespace", info.Regarding.Namespace, "reason", info.Reason, "action", info.Action, "note", info.Message)
 	}
 }
 
 // Run begins generator
 func (gen *controller) Run(ctx context.Context, workers int) {
 	logger := gen.logger
-	logger.Info("start")
-	defer logger.Info("terminated")
+	logger.V(2).Info("start")
+	defer logger.V(2).Info("terminated")
 	defer utilruntime.HandleCrash()
 	var waitGroup wait.Group
 	for i := 0; i < workers; i++ {
@@ -132,11 +134,32 @@ func (gen *controller) processNextWorkItem(ctx context.Context) bool {
 			gen.queue.AddRateLimited(key)
 			return true
 		}
-		gen.droppedEventsCounter.Add(ctx, 1)
+		if gen.metrics != nil {
+			gen.metrics.RecordDrop(ctx)
+		}
 		logger.Error(err, "dropping event", "key", key)
 	}
 	gen.queue.Forget(key)
 	return true
+}
+
+// sanitizeEventName ensures the name is RFC 1123 compliant by replacing invalid characters
+// RFC 1123 requires lowercase alphanumeric characters, '-' or '.', starting and ending with alphanumeric
+func sanitizeEventName(name string) string {
+	// Replace colons, slashes, and other non-compliant characters with hyphens
+	sanitized := invalidChars.ReplaceAllString(strings.ToLower(name), "-")
+
+	// Ensure name starts with an alphanumeric character
+	if len(sanitized) > 0 && !startsWithAlphaNumeric.MatchString(sanitized) {
+		sanitized = "a" + sanitized
+	}
+
+	// Ensure name ends with an alphanumeric character
+	if len(sanitized) > 0 && !endsWithAlphaNumeric.MatchString(sanitized) {
+		sanitized = sanitized + "z"
+	}
+
+	return sanitized
 }
 
 func (gen *controller) emitEvent(key Info) {
@@ -175,9 +198,17 @@ func (gen *controller) emitEvent(key Info) {
 	if namespace == "" {
 		namespace = metav1.NamespaceDefault
 	}
+	message := key.Message
+	if len(message) > 1024 {
+		message = message[0:1021] + "..."
+	}
+
+	// Sanitize refRegarding.Name to comply with RFC 1123 subdomain naming requirements
+	sanitizedName := sanitizeEventName(refRegarding.Name)
+
 	event := &eventsv1.Event{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%v.%x", refRegarding.Name, t.UnixNano()),
+			Name:      fmt.Sprintf("%v.%x", sanitizedName, t.UnixNano()),
 			Namespace: namespace,
 		},
 		EventTime:           timestamp,
@@ -188,7 +219,7 @@ func (gen *controller) emitEvent(key Info) {
 		Reason:              string(key.Reason),
 		Regarding:           *refRegarding,
 		Related:             refRelated,
-		Note:                key.Message,
+		Note:                message,
 		Type:                eventType,
 	}
 

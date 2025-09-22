@@ -19,13 +19,13 @@ limitations under the License.
 package v1alpha2
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	policyreportv1alpha2 "github.com/kyverno/kyverno/api/policyreport/v1alpha2"
+	apipolicyreportv1alpha2 "github.com/kyverno/kyverno/api/policyreport/v1alpha2"
 	versioned "github.com/kyverno/kyverno/pkg/client/clientset/versioned"
 	internalinterfaces "github.com/kyverno/kyverno/pkg/client/informers/externalversions/internalinterfaces"
-	v1alpha2 "github.com/kyverno/kyverno/pkg/client/listers/policyreport/v1alpha2"
+	policyreportv1alpha2 "github.com/kyverno/kyverno/pkg/client/listers/policyreport/v1alpha2"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -36,7 +36,7 @@ import (
 // PolicyReports.
 type PolicyReportInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1alpha2.PolicyReportLister
+	Lister() policyreportv1alpha2.PolicyReportLister
 }
 
 type policyReportInformer struct {
@@ -62,16 +62,28 @@ func NewFilteredPolicyReportInformer(client versioned.Interface, namespace strin
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.Wgpolicyk8sV1alpha2().PolicyReports(namespace).List(context.TODO(), options)
+				return client.Wgpolicyk8sV1alpha2().PolicyReports(namespace).List(context.Background(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.Wgpolicyk8sV1alpha2().PolicyReports(namespace).Watch(context.TODO(), options)
+				return client.Wgpolicyk8sV1alpha2().PolicyReports(namespace).Watch(context.Background(), options)
+			},
+			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.Wgpolicyk8sV1alpha2().PolicyReports(namespace).List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.Wgpolicyk8sV1alpha2().PolicyReports(namespace).Watch(ctx, options)
 			},
 		},
-		&policyreportv1alpha2.PolicyReport{},
+		&apipolicyreportv1alpha2.PolicyReport{},
 		resyncPeriod,
 		indexers,
 	)
@@ -82,9 +94,9 @@ func (f *policyReportInformer) defaultInformer(client versioned.Interface, resyn
 }
 
 func (f *policyReportInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&policyreportv1alpha2.PolicyReport{}, f.defaultInformer)
+	return f.factory.InformerFor(&apipolicyreportv1alpha2.PolicyReport{}, f.defaultInformer)
 }
 
-func (f *policyReportInformer) Lister() v1alpha2.PolicyReportLister {
-	return v1alpha2.NewPolicyReportLister(f.Informer().GetIndexer())
+func (f *policyReportInformer) Lister() policyreportv1alpha2.PolicyReportLister {
+	return policyreportv1alpha2.NewPolicyReportLister(f.Informer().GetIndexer())
 }

@@ -5,12 +5,12 @@ linters:
     - bidichk
     - bodyclose
     - containedctx
+    - copyloopvar
     - decorder
     - dogsled
     - durationcheck
     - errcheck
     - errname
-    - exportloopref
     - gci
     - gochecknoinits
     - gofmt
@@ -42,10 +42,13 @@ linters:
 
 run:
   timeout: 15m
-  skip-files:
+
+issues:
+  exclude-files:
     - ".+\\.generated.go"
     - ".+_test.go"
     - ".+_test_.+.go"
+    - docs/perf-testing/
 
 linters-settings:
   importas:

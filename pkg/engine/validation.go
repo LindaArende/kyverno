@@ -27,7 +27,7 @@ func (e *engine) validate(
 	defer policyContext.JSONContext().Restore()
 
 	gvk, _ := policyContext.ResourceKind()
-	for _, rule := range autogen.ComputeRules(policy, gvk.Kind) {
+	for _, rule := range autogen.Default.ComputeRules(policy, gvk.Kind) {
 		startTime := time.Now()
 		logger := internal.LoggerWithRule(logger, rule)
 		handlerFactory := func() (handlers.Handler, error) {
@@ -37,6 +37,10 @@ func (e *engine) validate(
 				return nil, nil
 			}
 			if hasValidate {
+				hasValidateAssert := rule.HasValidateAssert()
+				if hasValidateAssert && rule.Validation.Assert.Value != nil {
+					return validation.NewValidateAssertHandler(e.client, e.isCluster)
+				}
 				hasVerifyManifest := rule.HasVerifyManifests()
 				hasValidatePss := rule.HasValidatePodSecurity()
 				hasValidateCEL := rule.HasValidateCEL()
@@ -44,13 +48,14 @@ func (e *engine) validate(
 					return validation.NewValidateManifestHandler(
 						policyContext,
 						e.client,
+						e.isCluster,
 					)
 				} else if hasValidatePss {
-					return validation.NewValidatePssHandler()
+					return validation.NewValidatePssHandler(e.client, e.isCluster)
 				} else if hasValidateCEL {
-					return validation.NewValidateCELHandler(e.client)
+					return validation.NewValidateCELHandler(e.client, e.isCluster)
 				} else {
-					return validation.NewValidateResourceHandler()
+					return validation.NewValidateResourceHandler(e.client, e.isCluster)
 				}
 			} else if hasVerifyImageChecks {
 				return validation.NewValidateImageHandler(
@@ -58,6 +63,8 @@ func (e *engine) validate(
 					policyContext.NewResource(),
 					rule,
 					e.configuration,
+					e.client,
+					e.isCluster,
 				)
 			}
 			return nil, nil

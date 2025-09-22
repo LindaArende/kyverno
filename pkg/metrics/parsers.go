@@ -2,20 +2,16 @@ package metrics
 
 import (
 	"fmt"
+	"slices"
 
 	kyvernov1 "github.com/kyverno/kyverno/api/kyverno/v1"
+	"github.com/kyverno/kyverno/api/policies.kyverno.io/v1alpha1"
 	engineapi "github.com/kyverno/kyverno/pkg/engine/api"
 	datautils "github.com/kyverno/kyverno/pkg/utils/data"
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 )
 
-func ParsePolicyValidationMode(validationFailureAction kyvernov1.ValidationFailureAction) (PolicyValidationMode, error) {
-	if validationFailureAction.Enforce() {
-		return Enforce, nil
-	}
-	return Audit, nil
-}
-
-func ParsePolicyBackgroundMode(policy kyvernov1.PolicyInterface) PolicyBackgroundMode {
+func parsePolicyBackgroundMode(policy kyvernov1.PolicyInterface) PolicyBackgroundMode {
 	if policy.BackgroundProcessingEnabled() {
 		return BackgroundTrue
 	}
@@ -23,13 +19,13 @@ func ParsePolicyBackgroundMode(policy kyvernov1.PolicyInterface) PolicyBackgroun
 }
 
 func ParseRuleType(rule kyvernov1.Rule) RuleType {
-	if !datautils.DeepEqual(rule.Validation, kyvernov1.Validation{}) {
+	if rule.Validation != nil && !datautils.DeepEqual(*rule.Validation, kyvernov1.Validation{}) {
 		return Validate
 	}
-	if !datautils.DeepEqual(rule.Mutation, kyvernov1.Mutation{}) {
+	if rule.Mutation != nil && !datautils.DeepEqual(*rule.Mutation, kyvernov1.Mutation{}) {
 		return Mutate
 	}
-	if !datautils.DeepEqual(rule.Generation, kyvernov1.Generation{}) {
+	if rule.Generation != nil && !datautils.DeepEqual(*rule.Generation, kyvernov1.Generation{}) {
 		return Generate
 	}
 	if len(rule.VerifyImages) > 0 {
@@ -76,7 +72,51 @@ func GetPolicyInfos(policy kyvernov1.PolicyInterface) (string, string, PolicyTyp
 		namespace = policy.GetNamespace()
 		policyType = Namespaced
 	}
-	backgroundMode := ParsePolicyBackgroundMode(policy)
-	validationMode, err := ParsePolicyValidationMode(policy.GetSpec().ValidationFailureAction)
-	return name, namespace, policyType, backgroundMode, validationMode, err
+	backgroundMode := parsePolicyBackgroundMode(policy)
+	isEnforce := policy.GetSpec().HasValidateEnforce()
+	var validationMode PolicyValidationMode
+	if isEnforce {
+		validationMode = Enforce
+	} else {
+		validationMode = Audit
+	}
+	return name, namespace, policyType, backgroundMode, validationMode, nil
+}
+
+func GetCELPolicyInfos(policy v1alpha1.GenericPolicy) (string, string, PolicyBackgroundMode, admissionregistrationv1.ValidationAction) {
+	name := policy.GetName()
+	validationMode := admissionregistrationv1.Audit
+	backgroundMode := BackgroundFalse
+	policyType := ""
+
+	switch p := policy.(type) {
+	case *v1alpha1.ValidatingPolicy:
+		policyType = "Validating"
+
+		if p.Spec.BackgroundEnabled() {
+			backgroundMode = BackgroundTrue
+		}
+		if slices.Contains(p.Spec.ValidationActions(), admissionregistrationv1.Deny) {
+			validationMode = admissionregistrationv1.Deny
+		}
+	case *v1alpha1.ImageValidatingPolicy:
+		policyType = "ImageValidating"
+
+		if p.Spec.BackgroundEnabled() {
+			backgroundMode = BackgroundTrue
+		}
+		if slices.Contains(p.Spec.ValidationActions(), admissionregistrationv1.Deny) {
+			validationMode = admissionregistrationv1.Deny
+		}
+	case *v1alpha1.MutatingPolicy:
+		policyType = "Mutating"
+
+		if p.Spec.BackgroundEnabled() {
+			backgroundMode = BackgroundTrue
+		}
+	case *v1alpha1.GeneratingPolicy:
+		policyType = "Generating"
+	}
+
+	return name, policyType, backgroundMode, validationMode
 }

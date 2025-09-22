@@ -1,10 +1,37 @@
+global:
+  crdWatcher: true
+
+metricsConfig:
+  metricsRefreshInterval: 1m
+
 features:
   policyExceptions:
     enabled: true
+    namespace: "*"
   omitEvents:
     eventTypes: []
 
+admissionController:
+  extraArgs:
+    v: 4
+  rbac:
+    clusterRole:
+      extraResources:
+        - apiGroups:
+            - '*'
+          resources:
+            - secrets
+          verbs:
+            - create
+            - update
+            - patch
+            - delete
+            - get
+            - list
+
 backgroundController:
+  extraArgs:
+    v: 4
   rbac:
     clusterRole:
       extraResources:

@@ -28,7 +28,7 @@ func (e *engine) verifyAndPatchImages(
 	policyContext.JSONContext().Checkpoint()
 	defer policyContext.JSONContext().Restore()
 
-	for _, rule := range autogen.ComputeRules(policy, "") {
+	for _, rule := range autogen.Default.ComputeRules(policy, "") {
 		startTime := time.Now()
 		logger := internal.LoggerWithRule(logger, rule)
 		handlerFactory := func() (handlers.Handler, error) {
@@ -43,6 +43,8 @@ func (e *engine) verifyAndPatchImages(
 				e.rclientFactory,
 				e.ivCache,
 				&ivm,
+				e.client,
+				e.isCluster,
 			)
 		}
 		resource, ruleResp := e.invokeRuleHandler(

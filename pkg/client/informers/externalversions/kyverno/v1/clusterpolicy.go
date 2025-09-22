@@ -19,13 +19,13 @@ limitations under the License.
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	kyvernov1 "github.com/kyverno/kyverno/api/kyverno/v1"
+	apikyvernov1 "github.com/kyverno/kyverno/api/kyverno/v1"
 	versioned "github.com/kyverno/kyverno/pkg/client/clientset/versioned"
 	internalinterfaces "github.com/kyverno/kyverno/pkg/client/informers/externalversions/internalinterfaces"
-	v1 "github.com/kyverno/kyverno/pkg/client/listers/kyverno/v1"
+	kyvernov1 "github.com/kyverno/kyverno/pkg/client/listers/kyverno/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -36,7 +36,7 @@ import (
 // ClusterPolicies.
 type ClusterPolicyInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.ClusterPolicyLister
+	Lister() kyvernov1.ClusterPolicyLister
 }
 
 type clusterPolicyInformer struct {
@@ -61,16 +61,28 @@ func NewFilteredClusterPolicyInformer(client versioned.Interface, resyncPeriod t
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.KyvernoV1().ClusterPolicies().List(context.TODO(), options)
+				return client.KyvernoV1().ClusterPolicies().List(context.Background(), options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.KyvernoV1().ClusterPolicies().Watch(context.TODO(), options)
+				return client.KyvernoV1().ClusterPolicies().Watch(context.Background(), options)
+			},
+			ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.KyvernoV1().ClusterPolicies().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.KyvernoV1().ClusterPolicies().Watch(ctx, options)
 			},
 		},
-		&kyvernov1.ClusterPolicy{},
+		&apikyvernov1.ClusterPolicy{},
 		resyncPeriod,
 		indexers,
 	)
@@ -81,9 +93,9 @@ func (f *clusterPolicyInformer) defaultInformer(client versioned.Interface, resy
 }
 
 func (f *clusterPolicyInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&kyvernov1.ClusterPolicy{}, f.defaultInformer)
+	return f.factory.InformerFor(&apikyvernov1.ClusterPolicy{}, f.defaultInformer)
 }
 
-func (f *clusterPolicyInformer) Lister() v1.ClusterPolicyLister {
-	return v1.NewClusterPolicyLister(f.Informer().GetIndexer())
+func (f *clusterPolicyInformer) Lister() kyvernov1.ClusterPolicyLister {
+	return kyvernov1.NewClusterPolicyLister(f.Informer().GetIndexer())
 }

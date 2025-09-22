@@ -8,8 +8,8 @@ import (
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
-	policyreportv1alpha2 "github.com/kyverno/kyverno/api/policyreport/v1alpha2"
 	"github.com/kyverno/kyverno/cmd/cli/kubectl-kyverno/apis/v1alpha1"
+	"github.com/kyverno/kyverno/pkg/openreports"
 	"gotest.tools/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -62,12 +62,14 @@ func TestLoadTests(t *testing.T) {
 					TestResultBase: v1alpha1.TestResultBase{
 						Kind:   "Pod",
 						Policy: "images",
-						Result: policyreportv1alpha2.StatusPass,
+						Result: openreports.StatusPass,
 						Rule:   "only-allow-trusted-images",
 					},
-					Resources: []string{
-						"test-pod-with-non-root-user-image",
-						"test-pod-with-trusted-registry",
+					TestResultData: v1alpha1.TestResultData{
+						Resources: []string{
+							"test-pod-with-non-root-user-image",
+							"test-pod-with-trusted-registry",
+						},
 					},
 				}},
 			},
@@ -93,20 +95,24 @@ func TestLoadTests(t *testing.T) {
 					TestResultBase: v1alpha1.TestResultBase{
 						Kind:              "Namespace",
 						Policy:            "add-ns-quota",
-						Result:            policyreportv1alpha2.StatusPass,
+						Result:            openreports.StatusPass,
 						Rule:              "generate-limitrange",
 						GeneratedResource: "generatedLimitRange.yaml",
 					},
-					Resources: []string{"hello-world-namespace"},
+					TestResultData: v1alpha1.TestResultData{
+						Resources: []string{"hello-world-namespace"},
+					},
 				}, {
 					TestResultBase: v1alpha1.TestResultBase{
 						Kind:              "Namespace",
 						Policy:            "add-ns-quota",
-						Result:            policyreportv1alpha2.StatusPass,
+						Result:            openreports.StatusPass,
 						Rule:              "generate-resourcequota",
 						GeneratedResource: "generatedResourceQuota.yaml",
 					},
-					Resources: []string{"hello-world-namespace"},
+					TestResultData: v1alpha1.TestResultData{
+						Resources: []string{"hello-world-namespace"},
+					},
 				}},
 			},
 		}},
@@ -131,12 +137,14 @@ func TestLoadTests(t *testing.T) {
 					TestResultBase: v1alpha1.TestResultBase{
 						Kind:   "Pod",
 						Policy: "images",
-						Result: policyreportv1alpha2.StatusPass,
+						Result: openreports.StatusPass,
 						Rule:   "only-allow-trusted-images",
 					},
-					Resources: []string{
-						"test-pod-with-non-root-user-image",
-						"test-pod-with-trusted-registry",
+					TestResultData: v1alpha1.TestResultData{
+						Resources: []string{
+							"test-pod-with-non-root-user-image",
+							"test-pod-with-trusted-registry",
+						},
 					},
 				}},
 			},
@@ -156,20 +164,82 @@ func TestLoadTests(t *testing.T) {
 					TestResultBase: v1alpha1.TestResultBase{
 						Kind:              "Namespace",
 						Policy:            "add-ns-quota",
-						Result:            policyreportv1alpha2.StatusPass,
+						Result:            openreports.StatusPass,
 						Rule:              "generate-limitrange",
 						GeneratedResource: "generatedLimitRange.yaml",
 					},
-					Resources: []string{"hello-world-namespace"},
+					TestResultData: v1alpha1.TestResultData{
+						Resources: []string{"hello-world-namespace"},
+					},
 				}, {
 					TestResultBase: v1alpha1.TestResultBase{
 						Kind:              "Namespace",
 						Policy:            "add-ns-quota",
-						Result:            policyreportv1alpha2.StatusPass,
+						Result:            openreports.StatusPass,
 						Rule:              "generate-resourcequota",
 						GeneratedResource: "generatedResourceQuota.yaml",
 					},
-					Resources: []string{"hello-world-namespace"},
+					TestResultData: v1alpha1.TestResultData{
+						Resources: []string{"hello-world-namespace"},
+					},
+				}},
+			},
+		}},
+		wantErr: false,
+	}, {
+		name:     "several-tests-in-one-yaml",
+		dirPath:  "../_testdata/tests/test-3",
+		fileName: "kyverno-test.yaml",
+		want: []TestCase{{
+			Path: "../_testdata/tests/test-3/kyverno-test.yaml",
+			Test: &v1alpha1.Test{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "cli.kyverno.io/v1alpha1",
+					Kind:       "Test",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-something-1",
+				},
+				Policies:  []string{"policy-1.yaml"},
+				Resources: []string{"resources-1.yaml"},
+				Results: []v1alpha1.TestResult{{
+					TestResultBase: v1alpha1.TestResultBase{
+						Kind:   "Deployment",
+						Policy: "policy-1",
+						Result: openreports.StatusPass,
+						Rule:   "rule-1",
+					},
+					TestResultData: v1alpha1.TestResultData{
+						Resources: []string{
+							"test-1",
+						},
+					},
+				}},
+			},
+		}, {
+			Path: "../_testdata/tests/test-3/kyverno-test.yaml",
+			Test: &v1alpha1.Test{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "cli.kyverno.io/v1alpha1",
+					Kind:       "Test",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-something-2",
+				},
+				Policies:  []string{"policy-2.yaml"},
+				Resources: []string{"resources-2.yaml"},
+				Results: []v1alpha1.TestResult{{
+					TestResultBase: v1alpha1.TestResultBase{
+						Kind:   "Pod",
+						Policy: "policy-2",
+						Result: openreports.StatusSkip,
+						Rule:   "rule-2",
+					},
+					TestResultData: v1alpha1.TestResultData{
+						Resources: []string{
+							"test-2",
+						},
+					},
 				}},
 			},
 		}},
@@ -231,12 +301,14 @@ func TestLoadTest(t *testing.T) {
 					TestResultBase: v1alpha1.TestResultBase{
 						Kind:   "Pod",
 						Policy: "images",
-						Result: policyreportv1alpha2.StatusPass,
+						Result: openreports.StatusPass,
 						Rule:   "only-allow-trusted-images",
 					},
-					Resources: []string{
-						"test-pod-with-non-root-user-image",
-						"test-pod-with-trusted-registry",
+					TestResultData: v1alpha1.TestResultData{
+						Resources: []string{
+							"test-pod-with-non-root-user-image",
+							"test-pod-with-trusted-registry",
+						},
 					},
 				}},
 			},
@@ -260,12 +332,14 @@ func TestLoadTest(t *testing.T) {
 					TestResultBase: v1alpha1.TestResultBase{
 						Kind:   "Pod",
 						Policy: "images",
-						Result: policyreportv1alpha2.StatusPass,
+						Result: openreports.StatusPass,
 						Rule:   "only-allow-trusted-images",
 					},
-					Resources: []string{
-						"test-pod-with-non-root-user-image",
-						"test-pod-with-trusted-registry",
+					TestResultData: v1alpha1.TestResultData{
+						Resources: []string{
+							"test-pod-with-non-root-user-image",
+							"test-pod-with-trusted-registry",
+						},
 					},
 				}},
 			},
@@ -301,10 +375,20 @@ func TestLoadTest(t *testing.T) {
 			Path: "kyverno-test-bad.yaml",
 		},
 		wantErr: true,
-	}}
+	}, {
+		name:    "deprecated schema - missing apiVersion and kind",
+		path:    "../_testdata/tests/test-deprecated/kyverno-test.yaml",
+		want:    TestCase{Path: "../_testdata/tests/test-deprecated/kyverno-test.yaml"},
+		wantErr: true,
+	},
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := LoadTest(tt.fs, tt.path)
+			testCases := LoadTest(tt.fs, tt.path)
+			if len(testCases) != 1 {
+				t.Fatalf("LoadTest() = %d test cases, want 1", len(testCases))
+			}
+			got := testCases[0]
 			if (got.Err != nil) != tt.wantErr {
 				t.Errorf("LoadTest() error = %v, wantErr %v", got.Err, tt.wantErr)
 				return

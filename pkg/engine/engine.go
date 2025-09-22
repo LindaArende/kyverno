@@ -20,64 +20,48 @@ import (
 	"github.com/kyverno/kyverno/pkg/metrics"
 	"github.com/kyverno/kyverno/pkg/tracing"
 	stringutils "github.com/kyverno/kyverno/pkg/utils/strings"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 type engine struct {
-	configuration        config.Configuration
-	metricsConfiguration config.MetricsConfiguration
-	jp                   jmespath.Interface
-	client               engineapi.Client
-	rclientFactory       engineapi.RegistryClientFactory
-	ivCache              imageverifycache.Client
-	contextLoader        engineapi.ContextLoaderFactory
-	exceptionSelector    engineapi.PolicyExceptionSelector
-	// metrics
-	resultCounter     metric.Int64Counter
-	durationHistogram metric.Float64Histogram
+	configuration     config.Configuration
+	jp                jmespath.Interface
+	client            engineapi.Client
+	isCluster         bool
+	rclientFactory    engineapi.RegistryClientFactory
+	ivCache           imageverifycache.Client
+	contextLoader     engineapi.ContextLoaderFactory
+	exceptionSelector engineapi.PolicyExceptionSelector
+	metrics           metrics.PolicyEngineMetrics
 }
 
 type handlerFactory = func() (handlers.Handler, error)
 
 func NewEngine(
 	configuration config.Configuration,
-	metricsConfiguration config.MetricsConfiguration,
 	jp jmespath.Interface,
 	client engineapi.Client,
 	rclientFactory engineapi.RegistryClientFactory,
 	ivCache imageverifycache.Client,
 	contextLoader engineapi.ContextLoaderFactory,
 	exceptionSelector engineapi.PolicyExceptionSelector,
+	isCluster *bool,
 ) engineapi.Engine {
-	meter := otel.GetMeterProvider().Meter(metrics.MeterName)
-	resultCounter, err := meter.Int64Counter(
-		"kyverno_policy_results",
-		metric.WithDescription("can be used to track the results associated with the policies applied in the user's cluster, at the level from rule to policy to admission requests"),
-	)
-	if err != nil {
-		logging.Error(err, "failed to register metric kyverno_policy_results")
-	}
-	durationHistogram, err := meter.Float64Histogram(
-		"kyverno_policy_execution_duration_seconds",
-		metric.WithDescription("can be used to track the latencies (in seconds) associated with the execution/processing of the individual rules under Kyverno policies whenever they evaluate incoming resource requests"),
-	)
-	if err != nil {
-		logging.Error(err, "failed to register metric kyverno_policy_execution_duration_seconds")
+	if isCluster == nil {
+		defaultCluster := true
+		isCluster = &defaultCluster
 	}
 	return &engine{
-		configuration:        configuration,
-		metricsConfiguration: metricsConfiguration,
-		jp:                   jp,
-		client:               client,
-		rclientFactory:       rclientFactory,
-		ivCache:              ivCache,
-		contextLoader:        contextLoader,
-		exceptionSelector:    exceptionSelector,
-		resultCounter:        resultCounter,
-		durationHistogram:    durationHistogram,
+		configuration:     configuration,
+		jp:                jp,
+		client:            client,
+		rclientFactory:    rclientFactory,
+		ivCache:           ivCache,
+		isCluster:         *isCluster,
+		contextLoader:     contextLoader,
+		exceptionSelector: exceptionSelector,
+		metrics:           metrics.GetPolicyEngineMetrics(),
 	}
 }
 
@@ -93,7 +77,10 @@ func (e *engine) Validate(
 		response = response.WithPolicyResponse(policyResponse)
 	}
 	response = response.WithStats(engineapi.NewExecutionStats(startTime, time.Now()))
-	e.reportMetrics(ctx, logger, policyContext.Operation(), policyContext.AdmissionOperation(), response)
+
+	if e.metrics != nil {
+		e.metrics.RecordResponse(ctx, policyContext.Operation(), policyContext.AdmissionOperation(), policyContext.AdmissionInfo(), response)
+	}
 	return response
 }
 
@@ -107,11 +94,13 @@ func (e *engine) Mutate(
 	if internal.MatchPolicyContext(logger, e.client, policyContext, e.configuration) {
 		policyResponse, patchedResource := e.mutate(ctx, logger, policyContext)
 		response = response.
-			WithPolicyResponse(policyResponse).
-			WithPatchedResource(patchedResource)
+			WithPatchedResource(patchedResource).
+			WithPolicyResponse(policyResponse)
 	}
 	response = response.WithStats(engineapi.NewExecutionStats(startTime, time.Now()))
-	e.reportMetrics(ctx, logger, policyContext.Operation(), policyContext.AdmissionOperation(), response)
+	if e.metrics != nil {
+		e.metrics.RecordResponse(ctx, policyContext.Operation(), policyContext.AdmissionOperation(), policyContext.AdmissionInfo(), response)
+	}
 	return response
 }
 
@@ -127,7 +116,9 @@ func (e *engine) Generate(
 		response = response.WithPolicyResponse(policyResponse)
 	}
 	response = response.WithStats(engineapi.NewExecutionStats(startTime, time.Now()))
-	e.reportMetrics(ctx, logger, policyContext.Operation(), policyContext.AdmissionOperation(), response)
+	if e.metrics != nil {
+		e.metrics.RecordResponse(ctx, policyContext.Operation(), policyContext.AdmissionOperation(), policyContext.AdmissionInfo(), response)
+	}
 	return response
 }
 
@@ -146,7 +137,9 @@ func (e *engine) VerifyAndPatchImages(
 			WithPatchedResource(patchedResource), innerIvm
 	}
 	response = response.WithStats(engineapi.NewExecutionStats(startTime, time.Now()))
-	e.reportMetrics(ctx, logger, policyContext.Operation(), policyContext.AdmissionOperation(), response)
+	if e.metrics != nil {
+		e.metrics.RecordResponse(ctx, policyContext.Operation(), policyContext.AdmissionOperation(), policyContext.AdmissionInfo(), response)
+	}
 	return response, ivm
 }
 
@@ -162,7 +155,9 @@ func (e *engine) ApplyBackgroundChecks(
 		response = response.WithPolicyResponse(policyResponse)
 	}
 	response = response.WithStats(engineapi.NewExecutionStats(startTime, time.Now()))
-	e.reportMetrics(ctx, logger, policyContext.Operation(), policyContext.AdmissionOperation(), response)
+	if e.metrics != nil {
+		e.metrics.RecordResponse(ctx, policyContext.Operation(), policyContext.AdmissionOperation(), policyContext.AdmissionInfo(), response)
+	}
 	return response
 }
 
@@ -279,6 +274,10 @@ func (e *engine) invokeRuleHandler(
 				if !preconditionsPassed {
 					s := stringutils.JoinNonEmpty([]string{"preconditions not met", msg}, "; ")
 					return resource, handlers.WithSkip(rule, ruleType, s)
+				}
+				// substitute properties
+				if err := internal.SubstitutePropertiesInRule(logger, &rule, policyContext.JSONContext()); err != nil {
+					logger.Error(err, "failed to substitute variables in rule properties")
 				}
 				// get policy exceptions that matches both policy and rule name
 				exceptions, err := e.GetPolicyExceptions(policyContext.Policy(), rule.Name)

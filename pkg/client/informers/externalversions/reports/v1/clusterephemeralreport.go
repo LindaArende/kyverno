@@ -19,13 +19,13 @@ limitations under the License.
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	reportsv1 "github.com/kyverno/kyverno/api/reports/v1"
+	apireportsv1 "github.com/kyverno/kyverno/api/reports/v1"
 	versioned "github.com/kyverno/kyverno/pkg/client/clientset/versioned"
 	internalinterfaces "github.com/kyverno/kyverno/pkg/client/informers/externalversions/internalinterfaces"
-	v1 "github.com/kyverno/kyverno/pkg/client/listers/reports/v1"
+	reportsv1 "github.com/kyverno/kyverno/pkg/client/listers/reports/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -36,7 +36,7 @@ import (
 // ClusterEphemeralReports.
 type ClusterEphemeralReportInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.ClusterEphemeralReportLister
+	Lister() reportsv1.ClusterEphemeralReportLister
 }
 
 type clusterEphemeralReportInformer struct {
@@ -61,16 +61,28 @@ func NewFilteredClusterEphemeralReportInformer(client versioned.Interface, resyn
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.ReportsV1().ClusterEphemeralReports().List(context.TODO(), options)
+				return client.ReportsV1().ClusterEphemeralReports().List(context.Background(), options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.ReportsV1().ClusterEphemeralReports().Watch(context.TODO(), options)
+				return client.ReportsV1().ClusterEphemeralReports().Watch(context.Background(), options)
+			},
+			ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.ReportsV1().ClusterEphemeralReports().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.ReportsV1().ClusterEphemeralReports().Watch(ctx, options)
 			},
 		},
-		&reportsv1.ClusterEphemeralReport{},
+		&apireportsv1.ClusterEphemeralReport{},
 		resyncPeriod,
 		indexers,
 	)
@@ -81,9 +93,9 @@ func (f *clusterEphemeralReportInformer) defaultInformer(client versioned.Interf
 }
 
 func (f *clusterEphemeralReportInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&reportsv1.ClusterEphemeralReport{}, f.defaultInformer)
+	return f.factory.InformerFor(&apireportsv1.ClusterEphemeralReport{}, f.defaultInformer)
 }
 
-func (f *clusterEphemeralReportInformer) Lister() v1.ClusterEphemeralReportLister {
-	return v1.NewClusterEphemeralReportLister(f.Informer().GetIndexer())
+func (f *clusterEphemeralReportInformer) Lister() reportsv1.ClusterEphemeralReportLister {
+	return reportsv1.NewClusterEphemeralReportLister(f.Informer().GetIndexer())
 }

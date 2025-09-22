@@ -1,5 +1,7 @@
 {{- if .Values.reportsController.enabled -}}
+{{- include "kyverno.validateOpenReports" . -}}
 {{- if not .Values.templating.debug -}}
+{{- $automountSAToken := .Values.reportsController.rbac.serviceAccount.automountServiceAccountToken }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -7,6 +9,10 @@ metadata:
   namespace: {{ template "kyverno.namespace" . }}
   labels:
     {{- include "kyverno.reports-controller.labels" . | nindent 4 }}
+  {{- with .Values.reportsController.annotations }}
+  annotations:
+    {{- tpl (toYaml .) $ | nindent 4 }}
+  {{- end }}
 spec:
   replicas: {{ template "kyverno.deployment.replicas" .Values.reportsController.replicas }}
   revisionHistoryLimit: {{ .Values.reportsController.revisionHistoryLimit }}
@@ -28,9 +34,9 @@ spec:
       annotations: {{ tpl (toYaml .) $ | nindent 8 }}
       {{- end }}
     spec:
-      {{- with .Values.reportsController.imagePullSecrets }}
+      {{- with .Values.reportsController.imagePullSecrets | default .Values.global.imagePullSecrets }}
       imagePullSecrets:
-        {{- tpl (toYaml .) $ | nindent 8 }}
+        {{- tpl (include "kyverno.sortedImagePullSecrets" .) $ | nindent 8 }}
       {{- end }}
       {{- with .Values.reportsController.podSecurityContext }}
       securityContext:
@@ -57,6 +63,10 @@ spec:
       {{- with .Values.reportsController.dnsPolicy }}
       dnsPolicy: {{ . }}
       {{- end }}
+      {{- with .Values.reportsController.dnsConfig }}
+      dnsConfig:
+        {{- tpl (toYaml .) $ | nindent 8 }}
+      {{- end }}
       {{- if or .Values.reportsController.antiAffinity.enabled .Values.reportsController.podAffinity .Values.reportsController.nodeAffinity }}
       affinity:
         {{- if .Values.reportsController.antiAffinity.enabled }}
@@ -75,6 +85,7 @@ spec:
         {{- end }}
       {{- end }}
       serviceAccountName: {{ template "kyverno.reports-controller.serviceAccountName" . }}
+      automountServiceAccountToken: {{ $automountSAToken }}
       containers:
         - name: controller
           image: {{ include "kyverno.reports-controller.image" (dict "globalRegistry" .Values.global.image.registry "image" .Values.reportsController.image "defaultTag" .Chart.AppVersion) | quote }}
@@ -101,6 +112,7 @@ spec:
             {{- end }}
             {{- end }}
             - --disableMetrics={{ .Values.reportsController.metering.disabled }}
+            - --openreportsEnabled={{ .Values.openreports.enabled }}
             {{- if not .Values.reportsController.metering.disabled }}
             - --otelConfig={{ .Values.reportsController.metering.config }}
             - --metricsPort={{ .Values.reportsController.metering.port }}
@@ -112,13 +124,17 @@ spec:
             {{- end }}
             {{- end }}
             {{- if or .Values.imagePullSecrets .Values.existingImagePullSecrets }}
-            - --imagePullSecrets={{- join "," (concat (keys .Values.imagePullSecrets) .Values.existingImagePullSecrets) }}
+            - --imagePullSecrets={{- $secretNames := concat (keys .Values.imagePullSecrets | sortAlpha) (.Values.existingImagePullSecrets | sortAlpha) -}}
+              {{- join "," $secretNames -}}
             {{- end }}
-            {{- include "kyverno.features.flags" (pick (mergeOverwrite .Values.features .Values.reportsController.featuresOverride)
+            - --resyncPeriod={{ .Values.reportsController.resyncPeriod | default .Values.global.resyncPeriod }}
+            {{- include "kyverno.features.flags" (pick (mergeOverwrite (deepCopy .Values.features) .Values.reportsController.featuresOverride)
+              "reporting"
               "admissionReports"
               "aggregateReports"
               "policyReports"
               "validatingAdmissionPolicyReports"
+              "mutatingAdmissionPolicyReports"
               "backgroundScan"
               "configMapCaching"
               "deferredLoading"
@@ -126,7 +142,6 @@ spec:
               "logging"
               "omitEvents"
               "policyExceptions"
-              "reports"
               "registryClient"
               "tuf"
             ) | nindent 12 }}
@@ -135,9 +150,12 @@ spec:
             - --{{ $key }}={{ $value }}
             {{- end }}
             {{- end }}
-            {{ if .Values.reportsController.profiling.enabled }}
+            {{- if .Values.reportsController.profiling.enabled }}
             - --profile=true
             - --profilePort={{ .Values.reportsController.profiling.port }}
+            {{- end }}
+            {{- if or (not .Values.reportsController.sanityChecks) .Values.crds.reportsServer.enabled }}
+            - --reportsCRDsSanityChecks=false
             {{- end }}
           env:
           - name: KYVERNO_SERVICEACCOUNT_NAME
@@ -179,6 +197,11 @@ spec:
               subPath: ca-certificates.crt
               {{- end }}
             {{- end }}
+            {{- if not $automountSAToken }}
+            - name: serviceaccount-token
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
+            {{- end }}
       volumes:
       - name: sigstore
         {{- toYaml (required "A valid .Values.reportsController.sigstoreVolume entry is required" .Values.reportsController.sigstoreVolume) | nindent 8 }}
@@ -194,6 +217,26 @@ spec:
       - name: ca-certificates
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- end }}
+      {{- if not $automountSAToken }}
+      - name: serviceaccount-token
+        projected:
+          defaultMode: 0444
+          sources:
+            - serviceAccountToken:
+                expirationSeconds: 3607
+                path: token
+            - configMap:
+                name: kube-root-ca.crt
+                items:
+                  - key: ca.crt
+                    path: ca.crt
+            - downwardAPI:
+                items:
+                  - path: namespace
+                    fieldRef:
+                      apiVersion: v1
+                      fieldPath: metadata.namespace
       {{- end }}
 {{- end -}}
 {{- end -}}

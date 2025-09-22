@@ -3,9 +3,9 @@ package v2beta1
 import (
 	"testing"
 
+	"github.com/kyverno/kyverno/api/kyverno"
 	kyvernov1 "github.com/kyverno/kyverno/api/kyverno/v1"
 	"gotest.tools/assert"
-	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 )
 
@@ -22,11 +22,9 @@ func Test_Validate_UniqueRuleName(t *testing.T) {
 					},
 				}},
 			},
-			Validation: Validation{
-				Message: "message",
-				RawAnyPattern: &apiextv1.JSON{
-					Raw: []byte("{"),
-				},
+			Validation: &Validation{
+				Message:       "message",
+				RawAnyPattern: kyverno.ToAny("{"),
 			},
 		}, {
 			Name: "deny-privileged-disallowpriviligedescalation",
@@ -38,16 +36,14 @@ func Test_Validate_UniqueRuleName(t *testing.T) {
 						},
 					}},
 				}},
-			Validation: Validation{
-				Message: "message",
-				RawAnyPattern: &apiextv1.JSON{
-					Raw: []byte("{"),
-				},
+			Validation: &Validation{
+				Message:       "message",
+				RawAnyPattern: kyverno.ToAny("{"),
 			},
 		}},
 	}
 	path := field.NewPath("dummy")
-	errs := subject.Validate(path, false, "", nil)
+	_, errs := subject.Validate(path, false, "", nil)
 	assert.Equal(t, len(errs), 1)
 	assert.Equal(t, errs[0].Field, "dummy.rules[1].name")
 	assert.Equal(t, errs[0].Type, field.ErrorTypeInvalid)

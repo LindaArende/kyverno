@@ -61,7 +61,7 @@ func (o options) execute(out io.Writer, dirs ...string) error {
 }
 
 func (o options) processFile(out io.Writer, path string) {
-	results, err := policy.LoadWithLoader(policy.KubectlValidateLoader, nil, "", path)
+	results, err := policy.LoadWithLoader(nil, nil, "", path)
 	if err != nil {
 		return
 	}
@@ -179,7 +179,7 @@ func (o options) processFile(out io.Writer, path string) {
 			yamlBytes = append(yamlBytes, []byte("---\n")...)
 			yamlBytes = append(yamlBytes, finalBytes...)
 		}
-		if err := os.WriteFile(path, yamlBytes, os.ModePerm); err != nil {
+		if err := os.WriteFile(path, yamlBytes, os.ModePerm); err != nil { //nolint:gosec
 			fmt.Fprintf(out, "    ERROR: saving file (%s): %s", path, err)
 			fmt.Fprintln(out)
 			return

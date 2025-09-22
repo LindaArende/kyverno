@@ -12,8 +12,6 @@ import (
 	"github.com/kyverno/kyverno/pkg/controllers"
 	"github.com/kyverno/kyverno/pkg/logging"
 	"github.com/kyverno/kyverno/pkg/metrics"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -40,7 +38,8 @@ type manager struct {
 	logger          logr.Logger
 	interval        time.Duration
 	lock            sync.Mutex
-	infoMetric      metric.Int64ObservableGauge
+	infoMetric      metrics.TTLInfoMetrics
+	resyncPeriod    time.Duration
 }
 
 func NewManager(
@@ -48,17 +47,10 @@ func NewManager(
 	discoveryInterface discovery.DiscoveryInterface,
 	checker checker.AuthChecker,
 	timeInterval time.Duration,
+	resyncPeriod time.Duration,
 ) controllers.Controller {
 	logger := logging.WithName(ControllerName)
-	meterProvider := otel.GetMeterProvider()
-	meter := meterProvider.Meter(metrics.MeterName)
-	infoMetric, err := meter.Int64ObservableGauge(
-		"kyverno_ttl_controller_info",
-		metric.WithDescription("can be used to track individual resource controllers running for ttl based cleanup"),
-	)
-	if err != nil {
-		logger.Error(err, "Failed to create instrument, kyverno_ttl_controller_info")
-	}
+
 	mgr := &manager{
 		metadataClient:  metadataInterface,
 		discoveryClient: discoveryInterface,
@@ -66,10 +58,11 @@ func NewManager(
 		resController:   map[schema.GroupVersionResource]stopFunc{},
 		logger:          logger,
 		interval:        timeInterval,
-		infoMetric:      infoMetric,
+		infoMetric:      metrics.GetTTLInfoMetrics(),
+		resyncPeriod:    resyncPeriod,
 	}
-	if infoMetric != nil {
-		if _, err := meter.RegisterCallback(mgr.report, infoMetric); err != nil {
+	if mgr.infoMetric != nil {
+		if _, err := mgr.infoMetric.RegisterCallback(mgr.report); err != nil {
 			logger.Error(err, "failed to register callback")
 		}
 	}
@@ -124,8 +117,8 @@ func (m *manager) stop(ctx context.Context, gvr schema.GroupVersionResource) err
 	if stopFunc, ok := m.resController[gvr]; ok {
 		delete(m.resController, gvr)
 		func() {
-			defer logger.Info("controller stopped")
-			logger.Info("stopping controller...")
+			defer logger.V(2).Info("controller stopped")
+			logger.V(2).Info("stopping controller...")
 			stopFunc()
 		}()
 	}
@@ -143,7 +136,7 @@ func (m *manager) start(ctx context.Context, gvr schema.GroupVersionResource, wo
 	informer := metadatainformer.NewFilteredMetadataInformer(m.metadataClient,
 		gvr,
 		metav1.NamespaceAll,
-		10*time.Minute,
+		m.resyncPeriod,
 		indexers,
 		options,
 	)
@@ -198,15 +191,7 @@ func (m *manager) report(ctx context.Context, observer metric.Observer) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 	for gvr := range m.resController {
-		observer.ObserveInt64(
-			m.infoMetric,
-			1,
-			metric.WithAttributes(
-				attribute.String("resource_group", gvr.Group),
-				attribute.String("resource_version", gvr.Version),
-				attribute.String("resource_resource", gvr.Resource),
-			),
-		)
+		m.infoMetric.RecordTTLInfo(ctx, gvr, observer)
 	}
 	return nil
 }

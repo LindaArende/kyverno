@@ -4,27 +4,23 @@ import (
 	"context"
 	"errors"
 
-	kyvernov1alpha2 "github.com/kyverno/kyverno/api/kyverno/v1alpha2"
-	policyreportv1alpha2 "github.com/kyverno/kyverno/api/policyreport/v1alpha2"
 	reportsv1 "github.com/kyverno/kyverno/api/reports/v1"
 	"github.com/kyverno/kyverno/pkg/client/clientset/versioned"
+	"github.com/kyverno/kyverno/pkg/openreports"
+	openreportsclient "github.com/openreports/reports-api/pkg/client/clientset/versioned/typed/openreports.io/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func DeleteReport(ctx context.Context, report kyvernov1alpha2.ReportInterface, client versioned.Interface) error {
+func DeleteReport(ctx context.Context, report reportsv1.ReportInterface, client versioned.Interface, orClient openreportsclient.OpenreportsV1alpha1Interface) error {
 	switch v := report.(type) {
-	case *kyvernov1alpha2.AdmissionReport:
-		return client.KyvernoV1alpha2().AdmissionReports(report.GetNamespace()).Delete(ctx, v.GetName(), metav1.DeleteOptions{})
-	case *kyvernov1alpha2.ClusterAdmissionReport:
-		return client.KyvernoV1alpha2().ClusterAdmissionReports().Delete(ctx, v.GetName(), metav1.DeleteOptions{})
-	case *kyvernov1alpha2.BackgroundScanReport:
-		return client.KyvernoV1alpha2().BackgroundScanReports(report.GetNamespace()).Delete(ctx, v.GetName(), metav1.DeleteOptions{})
-	case *kyvernov1alpha2.ClusterBackgroundScanReport:
-		return client.KyvernoV1alpha2().ClusterBackgroundScanReports().Delete(ctx, v.GetName(), metav1.DeleteOptions{})
-	case *policyreportv1alpha2.PolicyReport:
-		return client.Wgpolicyk8sV1alpha2().PolicyReports(report.GetNamespace()).Delete(ctx, v.GetName(), metav1.DeleteOptions{})
-	case *policyreportv1alpha2.ClusterPolicyReport:
+	case *openreports.ReportAdapter:
+		return orClient.Reports(report.GetNamespace()).Delete(ctx, v.GetName(), metav1.DeleteOptions{})
+	case *openreports.ClusterReportAdapter:
+		return orClient.ClusterReports().Delete(ctx, v.GetName(), metav1.DeleteOptions{})
+	case *openreports.WgpolicyClusterReportAdapter:
 		return client.Wgpolicyk8sV1alpha2().ClusterPolicyReports().Delete(ctx, v.GetName(), metav1.DeleteOptions{})
+	case *openreports.WgpolicyReportAdapter:
+		return client.Wgpolicyk8sV1alpha2().PolicyReports(v.GetNamespace()).Delete(ctx, v.GetName(), metav1.DeleteOptions{})
 	case *reportsv1.EphemeralReport:
 		return client.ReportsV1().EphemeralReports(report.GetNamespace()).Delete(ctx, v.GetName(), metav1.DeleteOptions{})
 	case *reportsv1.ClusterEphemeralReport:

@@ -3,17 +3,21 @@ package utils
 import (
 	"github.com/go-logr/logr"
 	kyvernov1 "github.com/kyverno/kyverno/api/kyverno/v1"
-	kyvernov1alpha2 "github.com/kyverno/kyverno/api/kyverno/v1alpha2"
-	kyvernov2beta1 "github.com/kyverno/kyverno/api/kyverno/v2beta1"
+	kyvernov2 "github.com/kyverno/kyverno/api/kyverno/v2"
+	policiesv1alpha1 "github.com/kyverno/kyverno/api/policies.kyverno.io/v1alpha1"
+	reportsv1 "github.com/kyverno/kyverno/api/reports/v1"
 	"github.com/kyverno/kyverno/pkg/autogen"
 	kyvernov1listers "github.com/kyverno/kyverno/pkg/client/listers/kyverno/v1"
-	kyvernov2beta1listers "github.com/kyverno/kyverno/pkg/client/listers/kyverno/v2beta1"
+	kyvernov2listers "github.com/kyverno/kyverno/pkg/client/listers/kyverno/v2"
+	policiesv1alpha1listers "github.com/kyverno/kyverno/pkg/client/listers/policies.kyverno.io/v1alpha1"
 	datautils "github.com/kyverno/kyverno/pkg/utils/data"
 	policyvalidation "github.com/kyverno/kyverno/pkg/validation/policy"
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	admissionregistrationv1alpha1 "k8s.io/api/admissionregistration/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/sets"
+	admissionregistrationv1listers "k8s.io/client-go/listers/admissionregistration/v1"
 	admissionregistrationv1alpha1listers "k8s.io/client-go/listers/admissionregistration/v1alpha1"
 )
 
@@ -33,7 +37,7 @@ func CanBackgroundProcess(p kyvernov1.PolicyInterface) bool {
 func BuildKindSet(logger logr.Logger, policies ...kyvernov1.PolicyInterface) sets.Set[string] {
 	kinds := sets.New[string]()
 	for _, policy := range policies {
-		for _, rule := range autogen.ComputeRules(policy, "") {
+		for _, rule := range autogen.Default.ComputeRules(policy, "") {
 			if rule.HasValidate() || rule.HasVerifyImages() {
 				kinds.Insert(rule.MatchResources.GetKinds()...)
 			}
@@ -63,7 +67,7 @@ func RemoveNonValidationPolicies(policies ...kyvernov1.PolicyInterface) []kyvern
 	return validationPolicies
 }
 
-func ReportsAreIdentical(before, after kyvernov1alpha2.ReportInterface) bool {
+func ReportsAreIdentical(before, after reportsv1.ReportInterface) bool {
 	if !datautils.DeepEqual(before.GetAnnotations(), after.GetAnnotations()) {
 		return false
 	}
@@ -111,8 +115,8 @@ func FetchPolicies(polLister kyvernov1listers.PolicyLister, namespace string) ([
 	return policies, nil
 }
 
-func FetchPolicyExceptions(polexLister kyvernov2beta1listers.PolicyExceptionLister, namespace string) ([]kyvernov2beta1.PolicyException, error) {
-	var exceptions []kyvernov2beta1.PolicyException
+func FetchPolicyExceptions(polexLister kyvernov2listers.PolicyExceptionLister, namespace string) ([]kyvernov2.PolicyException, error) {
+	var exceptions []kyvernov2.PolicyException
 	if polexs, err := polexLister.PolicyExceptions(namespace).List(labels.Everything()); err != nil {
 		return nil, err
 	} else {
@@ -125,8 +129,32 @@ func FetchPolicyExceptions(polexLister kyvernov2beta1listers.PolicyExceptionList
 	return exceptions, nil
 }
 
-func FetchValidatingAdmissionPolicies(vapLister admissionregistrationv1alpha1listers.ValidatingAdmissionPolicyLister) ([]admissionregistrationv1alpha1.ValidatingAdmissionPolicy, error) {
-	var policies []admissionregistrationv1alpha1.ValidatingAdmissionPolicy
+func FetchMutatingAdmissionPolicies(mapLister admissionregistrationv1alpha1listers.MutatingAdmissionPolicyLister) ([]admissionregistrationv1alpha1.MutatingAdmissionPolicy, error) {
+	var policies []admissionregistrationv1alpha1.MutatingAdmissionPolicy
+	if pols, err := mapLister.List(labels.Everything()); err != nil {
+		return nil, err
+	} else {
+		for _, pol := range pols {
+			policies = append(policies, *pol)
+		}
+	}
+	return policies, nil
+}
+
+func FetchMutatingAdmissionPolicyBindings(mapBindingLister admissionregistrationv1alpha1listers.MutatingAdmissionPolicyBindingLister) ([]admissionregistrationv1alpha1.MutatingAdmissionPolicyBinding, error) {
+	var bindings []admissionregistrationv1alpha1.MutatingAdmissionPolicyBinding
+	if pols, err := mapBindingLister.List(labels.Everything()); err != nil {
+		return nil, err
+	} else {
+		for _, pol := range pols {
+			bindings = append(bindings, *pol)
+		}
+	}
+	return bindings, nil
+}
+
+func FetchValidatingAdmissionPolicies(vapLister admissionregistrationv1listers.ValidatingAdmissionPolicyLister) ([]admissionregistrationv1.ValidatingAdmissionPolicy, error) {
+	var policies []admissionregistrationv1.ValidatingAdmissionPolicy
 	if pols, err := vapLister.List(labels.Everything()); err != nil {
 		return nil, err
 	} else {
@@ -137,8 +165,8 @@ func FetchValidatingAdmissionPolicies(vapLister admissionregistrationv1alpha1lis
 	return policies, nil
 }
 
-func FetchValidatingAdmissionPolicyBindings(vapBindingLister admissionregistrationv1alpha1listers.ValidatingAdmissionPolicyBindingLister) ([]admissionregistrationv1alpha1.ValidatingAdmissionPolicyBinding, error) {
-	var bindings []admissionregistrationv1alpha1.ValidatingAdmissionPolicyBinding
+func FetchValidatingAdmissionPolicyBindings(vapBindingLister admissionregistrationv1listers.ValidatingAdmissionPolicyBindingLister) ([]admissionregistrationv1.ValidatingAdmissionPolicyBinding, error) {
+	var bindings []admissionregistrationv1.ValidatingAdmissionPolicyBinding
 	if pols, err := vapBindingLister.List(labels.Everything()); err != nil {
 		return nil, err
 	} else {
@@ -147,4 +175,49 @@ func FetchValidatingAdmissionPolicyBindings(vapBindingLister admissionregistrati
 		}
 	}
 	return bindings, nil
+}
+
+func FetchValidatingPolicies(vpolLister policiesv1alpha1listers.ValidatingPolicyLister) ([]policiesv1alpha1.ValidatingPolicy, error) {
+	var policies []policiesv1alpha1.ValidatingPolicy
+	if pols, err := vpolLister.List(labels.Everything()); err != nil {
+		return nil, err
+	} else {
+		for _, pol := range pols {
+			policies = append(policies, *pol)
+		}
+	}
+	return policies, nil
+}
+
+func FetchMutatingPolicies(mpolLister policiesv1alpha1listers.MutatingPolicyLister) ([]policiesv1alpha1.MutatingPolicy, error) {
+	var policies []policiesv1alpha1.MutatingPolicy
+	if pols, err := mpolLister.List(labels.Everything()); err != nil {
+		return nil, err
+	} else {
+		for _, pol := range pols {
+			policies = append(policies, *pol)
+		}
+	}
+	return policies, nil
+}
+
+func FetchImageVerificationPolicies(ivpolLister policiesv1alpha1listers.ImageValidatingPolicyLister) ([]policiesv1alpha1.ImageValidatingPolicy, error) {
+	var policies []policiesv1alpha1.ImageValidatingPolicy
+	if pols, err := ivpolLister.List(labels.Everything()); err != nil {
+		return nil, err
+	} else {
+		for _, pol := range pols {
+			policies = append(policies, *pol)
+		}
+	}
+	return policies, nil
+}
+
+func FetchCELPolicyExceptions(celexLister policiesv1alpha1listers.PolicyExceptionLister, namespace string) ([]*policiesv1alpha1.PolicyException, error) {
+	exceptions, err := celexLister.PolicyExceptions(namespace).List(labels.Everything())
+	if err != nil {
+		return nil, err
+	}
+
+	return exceptions, nil
 }

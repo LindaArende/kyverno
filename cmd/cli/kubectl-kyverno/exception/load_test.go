@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	kyvernov2 "github.com/kyverno/kyverno/api/kyverno/v2"
-	kyvernov2alpha1 "github.com/kyverno/kyverno/api/kyverno/v2alpha1"
 	kyvernov2beta1 "github.com/kyverno/kyverno/api/kyverno/v2beta1"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -16,22 +15,34 @@ import (
 
 func Test_load(t *testing.T) {
 	tests := []struct {
-		name       string
-		policies   string
-		wantLoaded int
-		wantErr    bool
+		name                string
+		policies            string
+		exceptionsLoaded    int
+		celExceptionsLoaded int
+		wantErr             bool
 	}{{
 		name:     "not a policy exception",
 		policies: "../_testdata/resources/namespace.yaml",
 		wantErr:  true,
 	}, {
-		name:       "policy exception",
-		policies:   "../_testdata/exceptions/exception.yaml",
-		wantLoaded: 1,
+		name:                "policy exception",
+		policies:            "../_testdata/exceptions/exception.yaml",
+		exceptionsLoaded:    1,
+		celExceptionsLoaded: 0,
 	}, {
 		name:     "policy exception and policy",
 		policies: "../_testdata/exceptions/exception-and-policy.yaml",
 		wantErr:  true,
+	}, {
+		name:                "cel policy exception",
+		policies:            "../_testdata/exceptions/celexception.yaml",
+		exceptionsLoaded:    0,
+		celExceptionsLoaded: 1,
+	}, {
+		name:                "cel policy exception and policy",
+		policies:            "../_testdata/exceptions/exception-and-celexception.yaml",
+		exceptionsLoaded:    1,
+		celExceptionsLoaded: 1,
 	}}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -40,8 +51,12 @@ func Test_load(t *testing.T) {
 			require.NoError(t, err)
 			if res, err := load(bytes); (err != nil) != tt.wantErr {
 				t.Errorf("Load() error = %v, wantErr %v", err, tt.wantErr)
-			} else if len(res) != tt.wantLoaded {
-				t.Errorf("Load() loaded amount = %v, wantLoaded %v", len(res), tt.wantLoaded)
+			} else if res != nil {
+				if len(res.Exceptions) != tt.exceptionsLoaded {
+					t.Errorf("Load() loaded amount = %v, wantLoaded %v", len(res.Exceptions), tt.exceptionsLoaded)
+				} else if len(res.CELExceptions) != tt.celExceptionsLoaded {
+					t.Errorf("Load() loaded amount = %v, wantLoaded %v", len(res.CELExceptions), tt.celExceptionsLoaded)
+				}
 			}
 		})
 	}
@@ -53,15 +68,12 @@ func Test_SelectFrom(t *testing.T) {
 		&kyvernov2.PolicyException{TypeMeta: v1.TypeMeta{
 			Kind: exceptionV2.Kind, APIVersion: exceptionV2.GroupVersion().String()},
 		},
-		&kyvernov2alpha1.PolicyException{TypeMeta: v1.TypeMeta{
-			Kind: exceptionV2alpha1.Kind, APIVersion: exceptionV2alpha1.GroupVersion().String()},
-		},
 		&kyvernov2beta1.PolicyException{TypeMeta: v1.TypeMeta{
 			Kind: exceptionV2beta1.Kind, APIVersion: exceptionV2beta1.GroupVersion().String()},
 		},
 	)
 	exceptions := SelectFrom(resources)
-	require.Len(t, exceptions, 3)
+	require.Len(t, exceptions, 2)
 }
 
 func toUnstructured(t *testing.T, in ...interface{}) []*unstructured.Unstructured {

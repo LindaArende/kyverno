@@ -28,11 +28,11 @@ customPolicies: []
 #   spec: # spec
 
 # -- API server behavior if the webhook fails to respond ('Ignore', 'Fail')
-# For more info: https://kyverno.io/docs/writing-policies/policy-settings/
+# For more info: https://kyverno.io/docs/policy-types/cluster-policy/policy-settings/
 failurePolicy: Fail
 
 # -- Validation failure action (`Audit`, `Enforce`).
-# For more info https://kyverno.io/docs/writing-policies/validate.
+# For more info https://kyverno.io/docs/policy-types/cluster-policy/validate.
 validationFailureAction: Audit
 
 # -- Define validationFailureActionByPolicy for specific policies.
@@ -54,6 +54,10 @@ validationFailureActionOverrides:
   #   - action: audit
   #     namespaces:
   #       - fluent
+
+# -- Validate already existing resources.
+# For more info https://kyverno.io/docs/policy-types/.
+validationAllowExistingViolations: true
 
 # -- Exclude resources from individual policies.
 # Policies with multiple rules can have individual rules excluded by using the name of the rule as the key in the `policyExclude` map.
@@ -96,11 +100,14 @@ policyPreconditions: {}
   #     value: "dcgm-exporter*"
 
 # -- Customize the target Pod controllers for the auto-generated rules. (Eg. `none`, `Deployment`, `DaemonSet,Deployment,StatefulSet`)
-# For more info https://kyverno.io/docs/writing-policies/autogen/.
+# For more info https://kyverno.io/docs/policy-types/cluster-policy/autogen/.
 autogenControllers: ""
 
 # -- Name override.
 nameOverride:
+
+# -- Additional Annotations.
+customAnnotations: {}
 
 # -- Additional labels.
 customLabels: {}
@@ -114,3 +121,7 @@ skipBackgroundRequests: ~
 # -- Kyverno version
 # The default of "autodetect" will try to determine the currently installed version from the deployment
 kyvernoVersion: autodetect
+
+# -- Kubernetes version override
+# Override default value of kubeVersion set by release team taken from Chart.yaml with custom value. Ideally range of versions no more than two prior (ex., 1.28-1.31), must be enclosed in quotes.
+kubeVersionOverride:

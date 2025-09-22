@@ -19,19 +19,16 @@ limitations under the License.
 package v2alpha1
 
 import (
-	"net/http"
+	http "net/http"
 
-	v2alpha1 "github.com/kyverno/kyverno/api/kyverno/v2alpha1"
-	"github.com/kyverno/kyverno/pkg/client/clientset/versioned/scheme"
+	kyvernov2alpha1 "github.com/kyverno/kyverno/api/kyverno/v2alpha1"
+	scheme "github.com/kyverno/kyverno/pkg/client/clientset/versioned/scheme"
 	rest "k8s.io/client-go/rest"
 )
 
 type KyvernoV2alpha1Interface interface {
 	RESTClient() rest.Interface
-	CleanupPoliciesGetter
-	ClusterCleanupPoliciesGetter
 	GlobalContextEntriesGetter
-	PolicyExceptionsGetter
 }
 
 // KyvernoV2alpha1Client is used to interact with features provided by the kyverno.io group.
@@ -39,20 +36,8 @@ type KyvernoV2alpha1Client struct {
 	restClient rest.Interface
 }
 
-func (c *KyvernoV2alpha1Client) CleanupPolicies(namespace string) CleanupPolicyInterface {
-	return newCleanupPolicies(c, namespace)
-}
-
-func (c *KyvernoV2alpha1Client) ClusterCleanupPolicies() ClusterCleanupPolicyInterface {
-	return newClusterCleanupPolicies(c)
-}
-
 func (c *KyvernoV2alpha1Client) GlobalContextEntries() GlobalContextEntryInterface {
 	return newGlobalContextEntries(c)
-}
-
-func (c *KyvernoV2alpha1Client) PolicyExceptions(namespace string) PolicyExceptionInterface {
-	return newPolicyExceptions(c, namespace)
 }
 
 // NewForConfig creates a new KyvernoV2alpha1Client for the given config.
@@ -60,9 +45,7 @@ func (c *KyvernoV2alpha1Client) PolicyExceptions(namespace string) PolicyExcepti
 // where httpClient was generated with rest.HTTPClientFor(c).
 func NewForConfig(c *rest.Config) (*KyvernoV2alpha1Client, error) {
 	config := *c
-	if err := setConfigDefaults(&config); err != nil {
-		return nil, err
-	}
+	setConfigDefaults(&config)
 	httpClient, err := rest.HTTPClientFor(&config)
 	if err != nil {
 		return nil, err
@@ -74,9 +57,7 @@ func NewForConfig(c *rest.Config) (*KyvernoV2alpha1Client, error) {
 // Note the http client provided takes precedence over the configured transport values.
 func NewForConfigAndClient(c *rest.Config, h *http.Client) (*KyvernoV2alpha1Client, error) {
 	config := *c
-	if err := setConfigDefaults(&config); err != nil {
-		return nil, err
-	}
+	setConfigDefaults(&config)
 	client, err := rest.RESTClientForConfigAndClient(&config, h)
 	if err != nil {
 		return nil, err
@@ -99,17 +80,15 @@ func New(c rest.Interface) *KyvernoV2alpha1Client {
 	return &KyvernoV2alpha1Client{c}
 }
 
-func setConfigDefaults(config *rest.Config) error {
-	gv := v2alpha1.SchemeGroupVersion
+func setConfigDefaults(config *rest.Config) {
+	gv := kyvernov2alpha1.SchemeGroupVersion
 	config.GroupVersion = &gv
 	config.APIPath = "/apis"
-	config.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
+	config.NegotiatedSerializer = rest.CodecFactoryForGeneratedClient(scheme.Scheme, scheme.Codecs).WithoutConversion()
 
 	if config.UserAgent == "" {
 		config.UserAgent = rest.DefaultKubernetesUserAgent()
 	}
-
-	return nil
 }
 
 // RESTClient returns a RESTClient that is used to communicate

@@ -10,6 +10,8 @@ Generates reference documentation.
   
   It can be used to generate simple markdown files or markdown to be used for the website.
 
+  For more information visit https://kyverno.io/docs/kyverno-cli/#docs
+
 ```
 kyverno docs [flags]
 ```
@@ -29,6 +31,8 @@ kyverno docs [flags]
 ```
       --autogenTag      Determines if the generated docs should contain a timestamp (default true)
   -h, --help            help for docs
+      --markdownLinks   Determines if the generated docs should contain links to markdown files
+      --noDate          Determines if the generated docs should contain a date
   -o, --output string   Output path (default ".")
       --website         Website version
 ```
@@ -38,6 +42,7 @@ kyverno docs [flags]
 ```
       --add_dir_header                   If true, adds the file directory to the header of the log messages
       --alsologtostderr                  log to standard error as well as files (no effect when -logtostderr=true)
+      --kubeconfig string                Paths to a kubeconfig. Only required if out-of-cluster.
       --log_backtrace_at traceLocation   when logging hits line file:N, emit a stack trace (default :0)
       --log_dir string                   If non-empty, write log files in this directory (no effect when -logtostderr=true)
       --log_file string                  If non-empty, use this log file (no effect when -logtostderr=true)

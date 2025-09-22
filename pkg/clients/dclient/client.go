@@ -7,6 +7,7 @@ import (
 	"io"
 	"time"
 
+	metadataclient "github.com/kyverno/kyverno/pkg/clients/metadata"
 	kubeutils "github.com/kyverno/kyverno/pkg/utils/kube"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -41,7 +42,7 @@ type Interface interface {
 	// Access items using []Items
 	ListResource(ctx context.Context, apiVersion string, kind string, namespace string, lselector *metav1.LabelSelector) (*unstructured.UnstructuredList, error)
 	// DeleteResource deletes the specified resource
-	DeleteResource(ctx context.Context, apiVersion string, kind string, namespace string, name string, dryRun bool) error
+	DeleteResource(ctx context.Context, apiVersion string, kind string, namespace string, name string, dryRun bool, options metav1.DeleteOptions) error
 	// CreateResource creates object for the specified resource/namespace
 	CreateResource(ctx context.Context, apiVersion string, kind string, namespace string, obj interface{}, dryRun bool) (*unstructured.Unstructured, error)
 	// UpdateResource updates object for the specified resource/namespace
@@ -68,6 +69,8 @@ func NewClient(
 	dyn dynamic.Interface,
 	kube kubernetes.Interface,
 	resync time.Duration,
+	crdWatcher bool,
+	metadataClient metadataclient.UpstreamInterface,
 ) (Interface, error) {
 	disco := kube.Discovery()
 	client := client{
@@ -85,6 +88,15 @@ func NewClient(
 	// If a resource is removed then and cache is not invalidate yet, we will not detect the removal
 	// but the re-sync shall re-evaluate
 	go discoveryClient.Poll(ctx, resync)
+	// If CRD watcher is enabled, then it starts the watcher
+	// This watcher will watch for CRD changes and invalidate the local cache when changes occur in customresourcedefinitions
+	if crdWatcher {
+		go func() {
+			if err := discoveryClient.CreateCRDWatcher(ctx, metadataClient); err != nil {
+				logger.Error(err, "CRD watcher failed")
+			}
+		}()
+	}
 	client.SetDiscovery(discoveryClient)
 	return &client, nil
 }
@@ -183,8 +195,7 @@ func (c *client) ListResource(ctx context.Context, apiVersion string, kind strin
 }
 
 // DeleteResource deletes the specified resource
-func (c *client) DeleteResource(ctx context.Context, apiVersion string, kind string, namespace string, name string, dryRun bool) error {
-	options := metav1.DeleteOptions{}
+func (c *client) DeleteResource(ctx context.Context, apiVersion string, kind string, namespace string, name string, dryRun bool, options metav1.DeleteOptions) error {
 	if dryRun {
 		options = metav1.DeleteOptions{DryRun: []string{metav1.DryRunAll}}
 	}

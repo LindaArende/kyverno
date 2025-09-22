@@ -1,11 +1,12 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 
 	kyvernov1 "github.com/kyverno/kyverno/api/kyverno/v1"
-	kyvernov1beta1 "github.com/kyverno/kyverno/api/kyverno/v1beta1"
+	kyvernov2 "github.com/kyverno/kyverno/api/kyverno/v2"
 	"github.com/kyverno/kyverno/ext/wildcard"
 	datautils "github.com/kyverno/kyverno/pkg/utils/data"
 	matchutils "github.com/kyverno/kyverno/pkg/utils/match"
@@ -52,7 +53,7 @@ func checkNameSpace(namespaces []string, resource unstructured.Unstructured) boo
 func doesResourceMatchConditionBlock(
 	conditionBlock kyvernov1.ResourceDescription,
 	userInfo kyvernov1.UserInfo,
-	admissionInfo kyvernov1beta1.RequestInfo,
+	admissionInfo kyvernov2.RequestInfo,
 	resource unstructured.Unstructured,
 	namespaceLabels map[string]string,
 	gvk schema.GroupVersionKind,
@@ -168,7 +169,7 @@ func matchSubjects(ruleSubjects []rbacv1.Subject, userInfo authenticationv1.User
 func MatchesResourceDescription(
 	resource unstructured.Unstructured,
 	rule kyvernov1.Rule,
-	admissionInfo kyvernov1beta1.RequestInfo,
+	admissionInfo kyvernov2.RequestInfo,
 	namespaceLabels map[string]string,
 	policyNamespace string,
 	gvk schema.GroupVersionKind,
@@ -209,7 +210,7 @@ func MatchesResourceDescription(
 	}
 
 	// check exlude conditions only if match succeeds
-	if len(reasonsForFailure) == 0 {
+	if len(reasonsForFailure) == 0 && rule.ExcludeResources != nil {
 		if len(rule.ExcludeResources.Any) > 0 {
 			// exclude the object if ANY of the criteria match
 			for _, rer := range rule.ExcludeResources.Any {
@@ -244,7 +245,7 @@ func MatchesResourceDescription(
 	}
 
 	if len(reasonsForFailure) > 0 {
-		return fmt.Errorf(errorMessage)
+		return errors.New(errorMessage)
 	}
 
 	return nil
@@ -252,7 +253,7 @@ func MatchesResourceDescription(
 
 func matchesResourceDescriptionMatchHelper(
 	rmr kyvernov1.ResourceFilter,
-	admissionInfo kyvernov1beta1.RequestInfo,
+	admissionInfo kyvernov2.RequestInfo,
 	resource unstructured.Unstructured,
 	namespaceLabels map[string]string,
 	gvk schema.GroupVersionKind,
@@ -260,7 +261,7 @@ func matchesResourceDescriptionMatchHelper(
 	operation kyvernov1.AdmissionOperation,
 ) []error {
 	var errs []error
-	if datautils.DeepEqual(admissionInfo, kyvernov1beta1.RequestInfo{}) {
+	if datautils.DeepEqual(admissionInfo, kyvernov2.RequestInfo{}) {
 		rmr.UserInfo = kyvernov1.UserInfo{}
 	}
 
@@ -277,7 +278,7 @@ func matchesResourceDescriptionMatchHelper(
 
 func matchesResourceDescriptionExcludeHelper(
 	rer kyvernov1.ResourceFilter,
-	admissionInfo kyvernov1beta1.RequestInfo,
+	admissionInfo kyvernov2.RequestInfo,
 	resource unstructured.Unstructured,
 	namespaceLabels map[string]string,
 	gvk schema.GroupVersionKind,

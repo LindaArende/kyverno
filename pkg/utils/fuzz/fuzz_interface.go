@@ -60,7 +60,7 @@ func (fi FuzzInterface) ListResource(ctx context.Context, apiVersion string, kin
 	return nil, fmt.Errorf("Not implemented")
 }
 
-func (fi FuzzInterface) DeleteResource(ctx context.Context, apiVersion string, kind string, namespace string, name string, dryRun bool) error {
+func (fi FuzzInterface) DeleteResource(ctx context.Context, apiVersion string, kind string, namespace string, name string, dryRun bool, options metav1.DeleteOptions) error {
 	return fmt.Errorf("Not implemented")
 }
 
@@ -223,6 +223,10 @@ func (fid FuzzIDiscovery) OpenAPISchema() (*openapiv2.Document, error) {
 
 func (fid FuzzIDiscovery) CachedDiscoveryInterface() discovery.CachedDiscoveryInterface {
 	return nil
+}
+
+func (fid FuzzIDiscovery) OnChanged(callback func()) {
+	// No-op for fuzzing
 }
 
 type DynamicFuzz struct {

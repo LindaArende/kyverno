@@ -33,20 +33,14 @@ annotations:
       url: https://kyverno.io/docs
   # valid kinds are: added, changed, deprecated, removed, fixed and security
   artifacthub.io/changes: |
-    - kind: added
-      description: Add profiling support
-    - kind: added
-      description: Add global nodeSelector
-    - kind: added
-      description: Add podLabels to the post-upgrade hook
-    - kind: added
-      description: Add podLabels to the pre-delete hook
-    - kind: added
-      description: Add cronjob ttl support
     - kind: fixed
-      description: Ensure CA certificate config maps are created when data is provided
-    - kind: added
-      description: Add global tolerations
+      description: Ensure spec.template.metadata isn't null
+    - kind: removed
+      description: Remove the `delete` permission for policyexceptions in the admission controller
+    - kind: changed
+      description: Enable the flag `--generateValidatingAdmissionPolicy` by default in the admission controller.
+    - kind: changed
+      description: Enable the flag `--validatingAdmissionPolicyReports` by default in the reports controller.
 dependencies:
   - name: grafana
     version: v0.0.0
@@ -54,3 +48,7 @@ dependencies:
   - name: crds
     version: v0.0.0
     condition: crds.install
+  - name: openreports
+    version: "0.1.0"
+    repository: "https://openreports.github.io/reports-api"
+    condition: openreports.installCrds
